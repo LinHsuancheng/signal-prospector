@@ -1,0 +1,45 @@
+[paths]
+# Optional Obsidian vault. Leave empty to keep all generated files in this project.
+vault = ""
+db = "data/signal-prospector.sqlite"
+inbox = "data/Inbox.md"
+reviewed_dir = "data/Reviewed"
+prompt = "prompts/score.example.md"
+
+[browser]
+cdp_endpoint = "http://127.0.0.1:9222"
+executable = "/path/to/google-chrome"
+profile = "data/chrome-profile"
+port = 9222
+
+[scoring]
+model = "your-model"
+base_url = "https://your-llm-provider.example/v1/chat/completions"
+api_key_env = "SIGNAL_PROSPECTOR_API_KEY"
+max_chars = 1000
+threshold = 5.0
+prompt_version = "v1"
+nonthink = false
+timeout = 180
+retries = 2
+
+[[pages]]
+name = "zhihu"
+url = "https://www.zhihu.com/"
+link_pattern = "^https://www\\.zhihu\\.com/question/[0-9]+/answer/[0-9]+"
+group_pattern = "^https://www\\.zhihu\\.com/question/[0-9]+"
+scrolls = 3
+rounds = 1
+scroll_delta = 1400
+scroll_wait_seconds = 20
+content_stop_markers = ["更多回答"]
+
+[pages.surface]
+container_selector = ".TopstoryItem"
+
+[pages.surface.fields]
+author = [".AuthorInfo-name", ".UserLink.AuthorInfo-name"]
+upvote = ["button.VoteButton", "button[aria-label*='赞同']"]
+comment = ["button[aria-label*='评论']"]
+favorite = ["button[aria-label*='收藏']"]
+like = ["button[aria-label*='喜欢']"]

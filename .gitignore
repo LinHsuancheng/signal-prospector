@@ -1,0 +1,15 @@
+data/
+.venv/
+*.egg-info/
+.env
+*.env
+*.env.*
+config.toml
+config.local.toml
+prompts/score.md
+prompts/*.private.md
+*.sqlite
+*.sqlite-*
+*.log
+__pycache__/
+*.pyc
