@@ -42,10 +42,10 @@ def _excerpt(text: str, limit: int = 500) -> str:
 
 
 def _card_matches(text: str) -> list[re.Match[str]]:
-    """Find cards using their visible Markdown structure, without hidden IDs."""
+    """Find cards by their visible heading and ID/URL fields."""
     return list(re.finditer(
         r"(?ms)^# [^\n]+\n\nID: (\d+)\nURL: .+?"
-        r"(?=^---\s*$\n\n^# [^\n]+\n\nID: \d+\nURL: |\Z)",
+        r"(?=^# [^\n]+\n\nID: \d+\nURL: |\Z)",
         text,
     ))
 
@@ -134,11 +134,16 @@ def organize(store: Store, inbox_path: str, reviewed_dir: str) -> int:
     )
     for _, article_id, score, description in completed:
         store.save_human(int(article_id), score, description, now())
-    remaining = text
-    for block, _, _, _ in completed:
-        remaining = remaining.replace(block, "", 1)
-    remaining = re.sub(r"(?:^|\n)---\s*(?=\n|$)", "\n", remaining)
+    completed_ids = {article_id for _, article_id, _, _ in completed}
+    remaining_blocks = [
+        match.group(0).rstrip()
+        for match in matches
+        if match.group(1) not in completed_ids
+    ]
+    remaining = "\n\n---\n\n".join(remaining_blocks)
+    if remaining_blocks:
+        remaining += "\n"
     temporary = file.with_suffix(file.suffix + ".tmp")
-    temporary.write_text(remaining.lstrip(), encoding="utf-8")
+    temporary.write_text(remaining, encoding="utf-8")
     temporary.replace(file)
     return len(completed)
