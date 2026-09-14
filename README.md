@@ -48,6 +48,18 @@ prospect browser
 prospect wash zhihu
 ```
 
+整理已有 Inbox，并继续淘洗 100 条新回答：
+
+```bash
+prospect all zhihu
+```
+
+也可以覆盖默认数量：
+
+```bash
+prospect all zhihu --number 200
+```
+
 整理留下的内容：
 
 ```bash

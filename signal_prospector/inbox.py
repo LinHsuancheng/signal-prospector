@@ -50,6 +50,19 @@ def _card_matches(text: str) -> list[re.Match[str]]:
     ))
 
 
+def _card_block(match: re.Match[str]) -> str:
+    """Return a card without separator lines inherited from the inbox."""
+    lines = match.group(0).splitlines()
+    while lines:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines and lines[-1].strip() == "---":
+            lines.pop()
+            continue
+        break
+    return "\n".join(lines).rstrip()
+
+
 def append_pending(store: Store, path: str) -> None:
     file = Path(path)
     file.parent.mkdir(parents=True, exist_ok=True)
@@ -96,7 +109,7 @@ def append_pending(store: Store, path: str) -> None:
         int(row["id"]): float(row["llm_score"])
         for row in store.all_articles()
     }
-    blocks = {int(match.group(1)): match.group(0).rstrip() for match in matches}
+    blocks = {int(match.group(1)): _card_block(match) for match in matches}
     ordered = sorted(blocks, key=lambda article_id: (-scores.get(article_id, 0), article_id))
     sorted_blocks = "\n\n---\n\n".join(blocks[article_id] for article_id in ordered) + "\n"
     prefix = text[:matches[0].start()]
@@ -113,7 +126,7 @@ def organize(store: Store, inbox_path: str, reviewed_dir: str) -> int:
     completed: list[tuple[str, str, int, str]] = []
     for match in matches:
         article_id = match.group(1)
-        block = match.group(0)
+        block = _card_block(match)
         score_match = re.search(r"^\*\*human_score:\*\*\s*(\d+)\s*$", block, re.M)
         if not score_match:
             continue
@@ -124,6 +137,17 @@ def organize(store: Store, inbox_path: str, reviewed_dir: str) -> int:
         description = description_match.group(1).strip() if description_match else ""
         completed.append((block, article_id, score, description))
     if not completed:
+        if matches:
+            normalized = (
+                text[:matches[0].start()]
+                + "\n\n---\n\n".join(_card_block(match) for match in matches)
+                + "\n"
+                + text[matches[-1].end():]
+            )
+            if normalized != text:
+                temporary = file.with_suffix(file.suffix + ".tmp")
+                temporary.write_text(normalized, encoding="utf-8")
+                temporary.replace(file)
         return 0
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     reviewed_file = Path(reviewed_dir) / f"{timestamp}.md"
@@ -136,7 +160,7 @@ def organize(store: Store, inbox_path: str, reviewed_dir: str) -> int:
         store.save_human(int(article_id), score, description, now())
     completed_ids = {article_id for _, article_id, _, _ in completed}
     remaining_blocks = [
-        match.group(0).rstrip()
+        _card_block(match)
         for match in matches
         if match.group(1) not in completed_ids
     ]

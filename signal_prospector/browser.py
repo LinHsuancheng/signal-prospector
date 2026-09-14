@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import json
 import time
+from urllib.request import ProxyHandler, build_opener
 from urllib.parse import urldefrag, urlsplit, urlunsplit
 from typing import Any
 
@@ -17,6 +19,13 @@ def canonical_url(value: str) -> str:
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, parts.query, ""))
 
 
+def _cdp_websocket_url(endpoint: str) -> str:
+    opener = build_opener(ProxyHandler({}))
+    with opener.open(endpoint.rstrip("/") + "/json/version", timeout=2) as response:
+        info = json.load(response)
+    return str(info["webSocketDebuggerUrl"])
+
+
 def collect_pages(endpoint: str, pages: list[dict[str, Any]]) -> list[dict[str, str]]:
     from playwright.sync_api import sync_playwright
 
@@ -24,7 +33,7 @@ def collect_pages(endpoint: str, pages: list[dict[str, Any]]) -> list[dict[str, 
     seen: set[str] = set()
     seen_groups: set[str] = set()
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(endpoint)
+        browser = playwright.chromium.connect_over_cdp(_cdp_websocket_url(endpoint))
         context = browser.contexts[0]
         page = next((p for p in context.pages if p.url != "about:blank"), context.pages[0])
         for spec in pages:

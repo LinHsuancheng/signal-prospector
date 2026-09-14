@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import subprocess
+import time
 import tomllib
-from urllib.request import urlopen
+from urllib.request import ProxyHandler, build_opener
 
 from .browser import collect_pages
 from .inbox import append_pending, organize
@@ -48,15 +49,23 @@ def load_env(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
-def command_browser(config: dict) -> int:
+def _cdp_available(endpoint: str) -> bool:
+    if not endpoint.startswith(("http://", "https://")):
+        return False
+    opener = build_opener(ProxyHandler({}))
+    try:
+        with opener.open(endpoint.rstrip("/") + "/json/version", timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def ensure_browser(config: dict) -> str:
     browser = config["browser"]
     endpoint = browser["cdp_endpoint"]
-    try:
-        with urlopen(endpoint + "/json/version", timeout=2):
-            print(f"Chrome CDP already running: {endpoint}")
-            return 0
-    except Exception:
-        pass
+    if _cdp_available(endpoint):
+        return endpoint
+
     log = Path(config["paths"]["db"]).parent / "chrome.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     port = int(browser["port"])
@@ -69,14 +78,47 @@ def command_browser(config: dict) -> int:
                 "--no-first-run",
                 "--disable-default-apps",
                 "--new-window",
+                "--start-maximized",
                 "about:blank",
             ],
             stdout=output,
             stderr=output,
             start_new_session=True,
         )
-    print(f"Chrome started: pid={process.pid} cdp={endpoint}")
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if _cdp_available(endpoint):
+            return endpoint
+        time.sleep(0.2)
+    raise RuntimeError(
+        f"Chrome started (pid={process.pid}) but CDP was not ready at {endpoint}"
+    )
+
+
+def command_browser(config: dict) -> int:
+    print(f"Chrome CDP ready: {ensure_browser(config)}")
     return 0
+
+
+def command_organize(config: dict) -> int:
+    store = Store(config["paths"]["db"])
+    try:
+        count = organize(
+            store,
+            config["paths"]["inbox"],
+            config["paths"]["reviewed_dir"],
+        )
+    finally:
+        store.close()
+    print(f"organized: {count}")
+    return 0
+
+
+def command_all(config: dict, media_name: str, number: int | None = None) -> int:
+    result = command_organize(config)
+    if result != 0:
+        return result
+    return command_wash(config, media_name, 100 if number is None else number)
 
 
 def process_candidates(store: Store, candidates: list[dict], config: dict) -> tuple[int, int, int, int]:
@@ -138,6 +180,15 @@ def command_wash(config: dict, media_name: str, number: int | None = None) -> in
     try:
         append_pending(store, paths["inbox"])
         browser = config["browser"]
+        try:
+            endpoint = ensure_browser(config)
+            print(f"Chrome CDP ready: {endpoint}", flush=True)
+        except Exception as exc:
+            print(
+                f"[wash-error] {type(exc).__name__}: {_short_error(exc)}",
+                flush=True,
+            )
+            return 1
         rounds = max(1, int(pages[0].get("rounds", 1)))
         remaining = number
         totals = [0, 0, 0, 0]
@@ -200,7 +251,7 @@ def _short_error(exc: Exception) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="prospect")
-    parser.add_argument("command", choices=("browser", "wash", "organize"))
+    parser.add_argument("command", choices=("browser", "wash", "organize", "all"))
     parser.add_argument("media", nargs="?")
     parser.add_argument("--config", default="config.toml")
     parser.add_argument(
@@ -215,13 +266,11 @@ def main(argv: list[str] | None = None) -> int:
         if not args.media:
             parser.error("wash requires <mediaName>")
         return command_wash(config, args.media, args.number)
-    store = Store(config["paths"]["db"])
-    try:
-        count = organize(store, config["paths"]["inbox"], config["paths"]["reviewed_dir"])
-    finally:
-        store.close()
-    print(f"organized: {count}")
-    return 0
+    if args.command == "organize":
+        return command_organize(config)
+    if not args.media:
+        parser.error("all requires <mediaName>")
+    return command_all(config, args.media, args.number)
 
 
 if __name__ == "__main__":

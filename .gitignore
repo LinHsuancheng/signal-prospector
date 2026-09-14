@@ -8,6 +8,7 @@ config.toml
 config.local.toml
 prompts/score.md
 prompts/*.private.md
+prompts/*.bak*
 *.sqlite
 *.sqlite-*
 *.log
